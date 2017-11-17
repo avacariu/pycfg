@@ -56,6 +56,20 @@ class CFG:
             bb.successors = successors
             bb.blockstack_view = blockstack_view
 
+    def to_dot(self):
+        dot = "digraph cfg { node [shape=record]; "
+
+        for bb in self.basic_blocks.values():
+            dot += f'BB{bb.offset} [label="{{{{{bb.offset}|{bb.instruction.opname}}}}}"]; '
+
+        for bb in self.basic_blocks.values():
+            for bb_succ in bb.successors:
+                dot += f'BB{bb.offset} -> BB{bb_succ}; '
+
+        dot += "}"
+
+        return dot
+
     def __iter__(self):
         return iter(self.basic_blocks.values())
 
