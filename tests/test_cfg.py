@@ -12,14 +12,15 @@ def register(f):
 
 
 @register
-def _(x):
+def _1(x):
     for i in range(x):
         print(i)
 
     return i
 
-@register   # noqa
-def _(x):
+
+@register
+def _2(x):
     for i in range(x):
         print(i)
 
@@ -28,8 +29,9 @@ def _(x):
 
     return 5
 
-@register   # noqa
-def _(x):
+
+@register
+def _3(x):
     for i in range(x):
         print(i)
 
@@ -43,16 +45,16 @@ def _(x):
             print("done")
 
 
-@register   # noqa
-def _():
+@register
+def _4():
     try:
         return 1
     finally:
         return 2
 
 
-@register   # noqa
-def _():
+@register
+def _5():
     try:
         return 1/0
     except ZeroDivisionError:
@@ -61,8 +63,8 @@ def _():
         print(5)
 
 
-@register   # noqa
-def _(a, i):
+@register
+def _6(a, i):
     try:
         return a[i].x
     except IndexError:
@@ -71,8 +73,8 @@ def _(a, i):
         return -2
 
 
-@register   # noqa
-def _(a, i):
+@register
+def _7(a, i):
     try:
         return a[i].x
     except IndexError:
@@ -83,8 +85,8 @@ def _(a, i):
         return -3
 
 
-@register   # noqa
-def _(x):
+@register
+def _8(x):
     with open(x, 'w') as f:
         try:
             f.readlines()
@@ -100,6 +102,12 @@ class TestCFG(unittest.TestCase):
             except Exception:
                 print(dis.Bytecode(func.__code__).dis())
                 raise
+
+            with open('function' + func.__name__ + '_' + str(hash(func)) + '.dot', 'w') as f:
+                f.write(cfg.to_dot())
+
+            with open('function' + func.__name__ + '_' + str(hash(func)) + '.bc', 'w') as f:
+                f.write(dis.Bytecode(func.__code__).dis())
 
             for bb in cfg:
                 for bb_succ in bb.successors:
