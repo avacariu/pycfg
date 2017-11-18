@@ -14,8 +14,12 @@ class NotOnStackException(Exception):
 
 class CFG:
     def __init__(self, code):
+
         bytecode = dis.Bytecode(code)
-        self.basic_blocks = {}
+        self.basic_blocks = {
+            -1: BasicBlock(dis.Instruction('FUNCTION_EXIT', 0, 0, '', '', -1, 0, False))
+        }
+
         self._blockstack = BlockStack()
 
         def predecessors_of(current_bb):
@@ -44,27 +48,51 @@ class CFG:
 
             return BlockStackView(self._blockstack, last_block)
 
+        def join_path_metadata(current_bb):
+            metadata = {}
+            for bb in predecessors_of(current_bb):
+                if bb.path_metadata.get('has return', False):
+                    metadata['has return'] = True
+
+            return metadata
+
         for instr in bytecode:
             bb = BasicBlock(instr)
             self.basic_blocks[bb.offset] = bb
 
-            successors, blockstack_view = compute_jump_targets(
+            # TODO: maintain path metdata (stuff like whether there's a
+            # RETURN_VALUE along the path) that gets inherited like the
+            # blockstack view
+
+            successors, new_metadata, blockstack_view = compute_jump_targets(
                 instr,
-                join_blockstack_views(bb)
+                join_path_metadata(bb),
+                join_blockstack_views(bb),
             )
 
             bb.successors = successors
             bb.blockstack_view = blockstack_view
+            bb.path_metadata = new_metadata
 
     def to_dot(self):
         dot = "digraph cfg { node [shape=record]; "
 
-        for bb in self.basic_blocks.values():
-            dot += f'BB{bb.offset} [label="{{{{{bb.offset}|{bb.instruction.opname}}}}}"]; '
+        def repr_offset(offset):
+            if offset >= 0:
+                return offset
+            return 'x'
 
         for bb in self.basic_blocks.values():
+            bb_offset_repr = repr_offset(bb.offset)
+
+            dot += f'BB{bb_offset_repr} [label="{{{{{bb.offset}|{bb.instruction.opname}}}}}"]; '
+
+        for bb in self.basic_blocks.values():
+            bb_offset_repr = repr_offset(bb.offset)
+
             for bb_succ in bb.successors:
-                dot += f'BB{bb.offset} -> BB{bb_succ}; '
+                bb_succ = repr_offset(bb_succ)
+                dot += f'BB{bb_offset_repr} -> BB{bb_succ}; '
 
         dot += "}"
 
@@ -133,11 +161,14 @@ class BlockStackView:
 
 
 class BasicBlock:
-    def __init__(self, instruction, blockstack_view=None, successors=None):
+    def __init__(self, instruction, blockstack_view=None, successors=None,
+                 path_metadata=None):
         self.instruction = instruction
         self.offset = instruction.offset
         self.blockstack_view = blockstack_view
         self.successors = successors or []
+
+        self.path_metadata = path_metadata or {}
 
     def __str__(self):
         return "{i.opname}:{i.offset} [{i.arg} ({i.argval})]".format(i=self.instruction)
@@ -192,7 +223,7 @@ def exceptional_jump_targets(offset, blockstack_view):
             return exceptional_jump_targets(offset, blockstack_view.pop())
 
 
-def compute_jump_targets(instr, blockstack_view):
+def compute_jump_targets(instr, path_metadata, blockstack_view):
     opname = instr.opname
     offset = instr.offset
     next_offset = instr.offset + 2
@@ -261,9 +292,14 @@ def compute_jump_targets(instr, blockstack_view):
         targets = []
 
         for block in blockstack_view:
-            if block.creator == 'SETUP_FINALLY':
-                targets = [block.next_offset]
-                break
+            if block.creator in {'SETUP_FINALLY', 'SETUP_WITH'}:
+                if instr.offset < block.next_offset:
+                    targets = [block.next_offset]
+                    break
+
+        targets = targets or [-1]
+
+        path_metadata['has return'] = True
 
         new_view = blockstack_view
 
@@ -276,9 +312,16 @@ def compute_jump_targets(instr, blockstack_view):
         # TODO check how we got here. If we got here because of a BREAK_LOOP,
         # we'll want to jump to the end of the loop, not just the next offset
         targets = [next_offset] + exceptional_jump_targets(offset, blockstack_view)
+
         new_view = blockstack_view.pop()
+
+        finally_block_on_stack = any(filter(lambda b: b.creator in {'SETUP_FINALLY', 'SETUP_WITH'},
+                                            new_view))
+
+        if path_metadata.get('has return', False) and not finally_block_on_stack:
+            targets.append(-1)
 
     else:
         raise ValueError("Unhandled instruction: %r" % instr)
 
-    return targets, new_view
+    return targets, path_metadata, new_view
