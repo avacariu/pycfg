@@ -12,6 +12,10 @@ class NotOnStackException(Exception):
     pass
 
 
+class EmptyBlockStackException(Exception):
+    pass
+
+
 class CFG:
     def __init__(self, code):
 
@@ -22,6 +26,20 @@ class CFG:
 
         self._blockstack = BlockStack()
 
+        # maintains the list of reachable instructions
+        reachable_instructions = {0}
+
+        # the targets of unreachable jump instructions
+        unreachable_jump_targets = set()
+
+        def is_reachable(instr):
+            if instr.offset in reachable_instructions:
+                return True
+            elif instr.is_jump_target:
+                if instr.offset in unreachable_jump_targets:
+                    return False
+                return True
+
         def predecessors_of(current_bb):
             for bb in self.basic_blocks.values():
                 if current_bb.offset in bb.successors:
@@ -31,8 +49,11 @@ class CFG:
             blocks = set()
 
             for bb in predecessors_of(current_bb):
+                if not is_reachable(bb.instruction):
+                    continue
+
                 try:
-                    view = bb.blockstack_view.pop_until(current_bb)
+                    view = bb.blockstack_view.pop_until(current_bb.offset)
                 except NotOnStackException:
                     view = bb.blockstack_view
 
@@ -53,10 +74,22 @@ class CFG:
             for bb in predecessors_of(current_bb):
                 if bb.path_metadata.get('has return', False):
                     metadata['has return'] = True
+                if bb.path_metadata.get('has except', False):
+                    metadata['has except'] = True
+
+                broken_loops = bb.path_metadata.get('broken loops', [])
+                metadata.setdefault('broken loops', []).extend(broken_loops)
 
             return metadata
 
         for instr in bytecode:
+
+            if not is_reachable(instr):
+                if instr.opname in ops.jumps:
+                    unreachable_jump_targets.add(instr.argval)
+
+                continue
+
             bb = BasicBlock(instr)
             self.basic_blocks[bb.offset] = bb
 
@@ -69,6 +102,8 @@ class CFG:
                 join_path_metadata(bb),
                 join_blockstack_views(bb),
             )
+
+            reachable_instructions.update(set(successors))
 
             bb.successors = successors
             bb.blockstack_view = blockstack_view
@@ -131,20 +166,18 @@ class BlockStackView:
             block = block.parent
 
     def pop(self):
+        if self.last_block is None:
+            raise EmptyBlockStackException("Cannot pop from empty block stack.")
+
         return BlockStackView(self.blockstack, self.last_block.parent)
 
-    def pop_until(self, bb):
-        """
-        Jumping to an exception handler or to a finally block means we have to
-        pop all blocks on the stack that are above that handler.
-        """
-
+    def pop_until(self, offset):
         block = self.last_block
-        while block is not None and block.next_offset != bb.offset:
+        while block is not None and block.next_offset <= offset:
             block = block.parent
 
-        if block is None:
-            raise NotOnStackException()
+        # if block is None:
+            # raise NotOnStackException()
 
         return BlockStackView(self.blockstack, block)
 
@@ -153,6 +186,22 @@ class BlockStackView:
         self.blockstack.add(new_block)
 
         return BlockStackView(self.blockstack, new_block)
+
+    def _first_X(self, X):
+        block = self.last_block
+
+        while block is not None and block.creator != X:
+            block = block.parent
+
+        return block
+
+    @property
+    def first_loop(self):
+        return self._first_X('SETUP_LOOP')
+
+    @property
+    def first_finally(self):
+        return self._first_X('SETUP_FINALLY')
 
     def __str__(self):
         return "Last block: {}".format(str(self.last_block))
@@ -187,6 +236,12 @@ class BlockStack:
     def add(self, block):
         self.blocks.append(block)
 
+    def __len__(self):
+        return len(self.blocks)
+
+    def __str__(self):
+        return str(self.blocks)
+
 
 def exceptional_jump_targets(offset, blockstack_view):
     try:
@@ -204,7 +259,7 @@ def exceptional_jump_targets(offset, blockstack_view):
             'SETUP_WITH',
         }
         if inner_block.creator in exception_handling_ops:
-            handler_offset = inner_block.next_offset
+            handler_offset = inner_block.next_offset + 2
 
             if offset < handler_offset:
                 # we're not in the handler itself, so we have to jump to
@@ -241,39 +296,37 @@ def compute_jump_targets(instr, path_metadata, blockstack_view):
                     'JUMP_IF_TRUE_OR_POP', 'JUMP_IF_FALSE_OR_POP',
                     'FOR_ITER'}:
         targets = [next_offset, instr.argval]
+        new_view = blockstack_view
 
     elif opname in {'WITH_CLEANUP_START', 'WITH_CLEANUP_FINISH'}:
         targets = [next_offset]
 
     elif opname == 'POP_EXCEPT':
+
+        # inner_block = blockstack_view[0]
+        # if inner_block.creator == 'SETUP_EXCEPT':
+            # # both these instruction create blocks which end with END_FINALLY,
+            # # and we'll let that one pop the block
+            # new_view = blockstack_view.pop()
+        # else:
+            # raise Exception("Can't pop except when there's no except on stack")
+
         targets = [next_offset]
-        new_view = blockstack_view.pop()
 
     elif opname == 'BREAK_LOOP':
         inner_block = blockstack_view[0]
 
+        broken_loops = path_metadata.setdefault('broken loops', [])
+        broken_loops.append(blockstack_view.first_loop)
+
         if inner_block.creator == 'SETUP_LOOP':
-            # NOTE: the offset the break will jump to should be right after
-            # a POP_BLOCK, so we'll just pop the block here
-            new_view = blockstack_view.pop()
-            targets = [inner_block.next_offset]
+            new_view = blockstack_view
+            targets = [inner_block.next_offset + 2]   # past the POP_BLOCK at the end
         else:
-            # we're inside some other block within this for loop (maybe a
-            # with / try block), so we need to jump to those handlers before
-            # exiting the loop
-            # TODO: will there always be a POP_BLOCK instruction that will
-            # remove the loop block, or does the BREAK_LOOP instruction do
-            # that?
             targets = exceptional_jump_targets(offset, blockstack_view)
 
     elif opname == 'POP_BLOCK':
-        inner_block = blockstack_view[0]
-
-        if inner_block.creator not in {'SETUP_WITH', 'SETUP_FINALLY'}:
-            # both these instruction create blocks which end with END_FINALLY,
-            # and we'll let that one pop the block
-            new_view = blockstack_view.pop()
-
+        new_view = blockstack_view
         targets = [next_offset]
 
     elif opname == 'CONTINUE_LOOP':
@@ -294,7 +347,7 @@ def compute_jump_targets(instr, path_metadata, blockstack_view):
         for block in blockstack_view:
             if block.creator in {'SETUP_FINALLY', 'SETUP_WITH'}:
                 if instr.offset < block.next_offset:
-                    targets = [block.next_offset]
+                    targets = [block.next_offset + 2]
                     break
 
         targets = targets or [-1]
@@ -306,22 +359,45 @@ def compute_jump_targets(instr, path_metadata, blockstack_view):
     elif opname in {'SETUP_FINALLY', 'SETUP_EXCEPT', 'SETUP_LOOP',
                     'SETUP_WITH'}:
         targets = [next_offset]
-        new_view = blockstack_view.push(opname, instr.argval)
+
+        # this is what is computed in Python/ceval.c
+        block_end = instr.offset + instr.arg
+        new_view = blockstack_view.push(opname, block_end)
 
     elif opname == 'END_FINALLY':
-        # TODO check how we got here. If we got here because of a BREAK_LOOP,
-        # we'll want to jump to the end of the loop, not just the next offset
+        # this should propagate exceptions since an exception that is propagated
+        # is indistinguishable from an which is raised from within the finally
+        # block
         targets = [next_offset] + exceptional_jump_targets(offset, blockstack_view)
-
-        new_view = blockstack_view.pop()
 
         finally_block_on_stack = any(filter(lambda b: b.creator in {'SETUP_FINALLY', 'SETUP_WITH'},
                                             new_view))
 
-        if path_metadata.get('has return', False) and not finally_block_on_stack:
+        if path_metadata.get('has return') and not finally_block_on_stack:
             targets.append(-1)
 
+        # first_finally = blockstack_view.first_finally
+        # if first_finally:
+            # new_view = blockstack_view.pop_until(first_finally.next_offset)
+
+        # if path_metadata.get('has except') and not finally_block_on_stack:
+            # # NOTE: This is *after* we popped the blockstack
+            # targets.extend(exceptional_jump_targets(offset, blockstack_view))
+
+        first_loop = blockstack_view.first_loop
+
+        if first_loop in path_metadata.get('broken loops', []):
+            targets.append(first_loop.next_offset)
+
+        new_view = blockstack_view
+
+    elif opname == 'RAISE_VARARGS':
+        targets = [next_offset] + exceptional_jump_targets(offset, blockstack_view)
+        path_metadata['has except'] = True
+
+        new_view = blockstack_view
+
     else:
-        raise ValueError("Unhandled instruction: %r" % instr)
+        raise ValueError("Unhandled instruction: %s" % str(instr))
 
     return targets, path_metadata, new_view

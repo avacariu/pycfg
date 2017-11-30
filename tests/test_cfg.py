@@ -94,6 +94,82 @@ def _8(x):
             return 1
 
 
+@register
+def _9(x):
+    """
+    Test for both a POP_BLOCK and a POP_EXCEPT depending on the branch
+    """
+
+    try:
+        x
+    except:     # noqa
+        print(x)
+
+    print(x**2)
+
+
+@register
+def _10(x):
+    for i in range(x):
+        break
+    else:
+        print(x)
+
+
+@register
+def _11(x):
+    while x:
+        break
+    else:
+        print(x)
+
+
+@register
+def _12(x):
+    try:
+        x
+    except Exception:
+        raise
+
+
+@register
+def _13(x):
+    try:
+        x
+    except Exception as e:
+        raise
+
+
+@register
+def _14(x):
+    while True:
+        if x:
+            break
+
+
+@register
+def _15(x):
+    while True:
+        if x:
+            break
+        else:
+            if x+1:
+                break
+        if x+2:
+            break
+
+
+@register
+def _16(x):
+    while True:
+        if x:
+            break
+        else:
+            break
+        if not x:
+            break
+
+
 class TestCFG(unittest.TestCase):
     def test_all_successors_exist(self):
         for func in function_registry:

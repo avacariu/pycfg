@@ -1,3 +1,4 @@
+import dis
 
 # ops which only modify the stack and don't do anything interesting that could
 # affect the CFG (e.g. have more than one child, or cause a jump)
@@ -103,3 +104,5 @@ boring_opnames = {
     'YIELD_FROM',
     'BEFORE_ASYNC_WITH',
 }
+
+jumps = {dis.opname[i] for i in dis.hasjabs + dis.hasjrel}
