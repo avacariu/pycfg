@@ -1,4 +1,5 @@
 import dis
+import os
 import unittest
 
 import pycfg
@@ -179,11 +180,12 @@ class TestCFG(unittest.TestCase):
                 print(dis.Bytecode(func.__code__).dis())
                 raise
 
-            with open('function' + func.__name__ + '_' + str(hash(func)) + '.dot', 'w') as f:
-                f.write(cfg.to_dot())
+            if os.environ.get('SAVE_CFG'):
+                with open('function' + func.__name__ + '_' + str(hash(func)) + '.dot', 'w') as f:
+                    f.write(cfg.to_dot())
 
-            with open('function' + func.__name__ + '_' + str(hash(func)) + '.bc', 'w') as f:
-                f.write(dis.Bytecode(func.__code__).dis())
+                with open('function' + func.__name__ + '_' + str(hash(func)) + '.bc', 'w') as f:
+                    f.write(dis.Bytecode(func.__code__).dis())
 
             for bb in cfg:
                 for bb_succ in bb.successors:
