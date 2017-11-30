@@ -259,7 +259,7 @@ def exceptional_jump_targets(offset, blockstack_view):
             'SETUP_WITH',
         }
         if inner_block.creator in exception_handling_ops:
-            handler_offset = inner_block.next_offset + 2
+            handler_offset = inner_block.next_offset
 
             if offset < handler_offset:
                 # we're not in the handler itself, so we have to jump to
@@ -321,7 +321,7 @@ def compute_jump_targets(instr, path_metadata, blockstack_view):
 
         if inner_block.creator == 'SETUP_LOOP':
             new_view = blockstack_view
-            targets = [inner_block.next_offset + 2]   # past the POP_BLOCK at the end
+            targets = [inner_block.next_offset]   # past the POP_BLOCK at the end
         else:
             targets = exceptional_jump_targets(offset, blockstack_view)
 
@@ -347,21 +347,19 @@ def compute_jump_targets(instr, path_metadata, blockstack_view):
         for block in blockstack_view:
             if block.creator in {'SETUP_FINALLY', 'SETUP_WITH'}:
                 if instr.offset < block.next_offset:
-                    targets = [block.next_offset + 2]
+                    targets = [block.next_offset]
                     break
 
         targets = targets or [-1]
+        new_view = blockstack_view
 
         path_metadata['has return'] = True
-
-        new_view = blockstack_view
 
     elif opname in {'SETUP_FINALLY', 'SETUP_EXCEPT', 'SETUP_LOOP',
                     'SETUP_WITH'}:
         targets = [next_offset]
 
-        # this is what is computed in Python/ceval.c
-        block_end = instr.offset + instr.arg
+        block_end = instr.argval
         new_view = blockstack_view.push(opname, block_end)
 
     elif opname == 'END_FINALLY':
@@ -375,14 +373,6 @@ def compute_jump_targets(instr, path_metadata, blockstack_view):
 
         if path_metadata.get('has return') and not finally_block_on_stack:
             targets.append(-1)
-
-        # first_finally = blockstack_view.first_finally
-        # if first_finally:
-            # new_view = blockstack_view.pop_until(first_finally.next_offset)
-
-        # if path_metadata.get('has except') and not finally_block_on_stack:
-            # # NOTE: This is *after* we popped the blockstack
-            # targets.extend(exceptional_jump_targets(offset, blockstack_view))
 
         first_loop = blockstack_view.first_loop
 
