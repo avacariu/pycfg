@@ -144,6 +144,8 @@ class CFG:
 
 
 class BlockStackView:
+    __slots__ = ('blockstack', 'last_block')
+
     def __init__(self, blockstack, last_block=None):
         self.blockstack = blockstack
         self.last_block = last_block
@@ -210,6 +212,9 @@ class BlockStackView:
 
 
 class BasicBlock:
+    __slots__ = ('instruction', 'offset', 'blockstack_view', 'successors',
+                 'path_metadata')
+
     def __init__(self, instruction, blockstack_view=None, successors=None,
                  path_metadata=None):
         self.instruction = instruction
