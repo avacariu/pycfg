@@ -21,10 +21,16 @@ class TestCFG(unittest.TestCase):
             try:
                 test_case = utils.load_test_case(test_case_filename)
             except (utils.NoPathException, EOFError):
-                print("Skipped test %d" % i, file=sys.stderr)
+                print(f"Skipped test {i} [{test_case_filename}]", file=sys.stderr)
+                continue
+            except MemoryError:
+                print(f"OOM on test {i} [{test_case_filename}]", file=sys.stderr)
+                continue
+            except ValueError:
+                print(f"ValueError on test {i} [{test_case_filename}]", file=sys.stderr)
                 continue
             else:
-                print("Completed test %d" % i, file=sys.stderr)
+                print(f"Completed test {i}", file=sys.stderr)
 
             try:
                 res = utils.try_path(test_case['path'], test_case['cfg'])
