@@ -232,7 +232,7 @@ class BlockStackView:
 
 class BasicBlock:
     __slots__ = ('instruction', 'offset', 'blockstack_view', 'successors',
-                 'path_metadata')
+                 'path_metadata', 'is_exit')
 
     def __init__(self, instruction, blockstack_view=None, successors=None,
                  path_metadata=None):
@@ -242,6 +242,8 @@ class BasicBlock:
         self.successors = successors or []
 
         self.path_metadata = path_metadata or {}
+
+        self.is_exit = self.offset == -1
 
     def __str__(self):
         return "{i.opname}:{i.offset} [{i.arg} ({i.argval})]".format(i=self.instruction)
