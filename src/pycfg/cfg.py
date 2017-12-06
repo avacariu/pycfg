@@ -1,5 +1,6 @@
 import dis
 from collections import namedtuple
+from queue import Queue
 
 from . import ops
 
@@ -134,7 +135,25 @@ class CFG:
         return dot
 
     def __iter__(self):
-        return iter(self.basic_blocks.values())
+        to_visit = Queue()
+        to_visit.put(0)
+
+        visited = set()
+
+        while not to_visit.empty():
+            bb_offset = to_visit.get()
+            visited.add(bb_offset)
+
+            bb = self.basic_blocks[bb_offset]
+
+            for succ in bb.successors:
+                if succ not in visited:
+                    to_visit.put(succ)
+
+            yield bb
+
+    def __reversed__(self):
+        return reversed(list(self))
 
     def __getitem__(self, key):
         return self.basic_blocks[key]
