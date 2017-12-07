@@ -190,3 +190,36 @@ class TestCFG(unittest.TestCase):
             for bb in cfg:
                 for bb_succ in bb.successors:
                     assert bb_succ in cfg, func.__code__
+
+    def test_filter(self):
+        def f(x):
+            for i in range(x):
+                print(i)
+                if i > 3:
+                    break
+            return 1
+
+        cfg = pycfg.CFG(f.__code__)
+
+        pred_10 = list(cfg.filter(predecessors_of=10))    # FOR_ITER
+        pred_34 = list(cfg.filter(predecessors_of=34))    # POP_BLOCK
+
+        assert len(pred_10) == 2
+        assert len(pred_34) == 1
+        assert pred_10[0].offset == 8
+        assert pred_10[1].offset == 28
+        assert pred_34[0].offset == 10
+
+    def test_edge_number(self):
+        def f(x):
+            for i in range(x):
+                print(i)
+                if i > 3:
+                    break
+            return 1
+
+        cfg = pycfg.CFG(f.__code__)
+
+        assert cfg.edge_number((8, 10)) == 0
+        assert cfg.edge_number((28, 10)) == 1
+        assert cfg.edge_number((10, 34)) == 0

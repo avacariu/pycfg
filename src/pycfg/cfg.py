@@ -134,6 +134,40 @@ class CFG:
 
         return dot
 
+    def edge_number(self, edge):
+        """
+        Returns the index of `edge` in the list of all the edges which have the
+        same target. The edges are sorted by distance to target.
+        """
+        start, end = edge
+
+        preds = (p.offset for p in self.filter(predecessors_of=end))
+
+        return sorted(preds, key=lambda p: abs(p-end)).index(start)
+
+    def filter(self, **constraints):
+        if constraints.pop('traverse', False):
+            self_iter = self
+        else:
+            self_iter = self.basic_blocks.values()
+
+        for bb in self_iter:
+            constraints_satisfied = True
+
+            for constraint, val in constraints.items():
+                if constraint == 'predecessors_of':
+                    if isinstance(val, BasicBlock):
+                        succ = val.offset
+                    else:
+                        succ = val
+
+                    if succ not in bb.successors:
+                        constraints_satisfied &= False
+
+            if constraints_satisfied:
+                yield bb
+
+
     def __iter__(self):
         to_visit = Queue()
         to_visit.put(0)
