@@ -381,7 +381,9 @@ def compute_jump_targets(instr, path_metadata, blockstack_view):
 
         if inner_block.creator == 'SETUP_LOOP':
             new_view = blockstack_view
-            targets = [inner_block.next_offset]   # past the POP_BLOCK at the end
+            # We jump past the POP_BLOCK at the end, since this seems to match
+            # the behaviour of CPython (based on observed paths)
+            targets = [inner_block.next_offset]
         else:
             targets = exceptional_jump_targets(offset, blockstack_view)
 
