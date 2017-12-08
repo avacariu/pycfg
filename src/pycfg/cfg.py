@@ -167,7 +167,6 @@ class CFG:
             if constraints_satisfied:
                 yield bb
 
-
     def __iter__(self):
         to_visit = Queue()
         to_visit.put(0)
@@ -181,7 +180,10 @@ class CFG:
             bb = self.basic_blocks[bb_offset]
 
             for succ in bb.successors:
-                if succ not in visited:
+                if succ in visited:
+                    continue
+
+                if succ not in to_visit.queue:
                     to_visit.put(succ)
 
             yield bb
