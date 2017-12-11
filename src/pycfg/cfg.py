@@ -1,5 +1,6 @@
 import dis
-from collections import namedtuple
+from collections import namedtuple, deque
+from functools import lru_cache
 from queue import Queue
 
 from . import ops
@@ -17,8 +18,14 @@ class EmptyBlockStackException(Exception):
     pass
 
 
+class CircularDependenciesException(Exception):
+    pass
+
+
 class CFG:
     def __init__(self, code):
+
+        self.__edge_num = {}
 
         bytecode = dis.Bytecode(code)
         self.basic_blocks = {
@@ -139,11 +146,18 @@ class CFG:
         Returns the index of `edge` in the list of all the edges which have the
         same target. The edges are sorted by distance to target.
         """
-        start, end = edge
 
-        preds = (p.offset for p in self.filter(predecessors_of=end))
+        if edge not in self.__edge_num:
+            start, end = edge
 
-        return sorted(preds, key=lambda p: abs(p-end)).index(start)
+            preds = [p.offset for p in self.filter(predecessors_of=end)]
+
+            if start not in preds:
+                return 0
+
+            self.__edge_num[edge] = sorted(preds, key=lambda p: abs(p-end)).index(start)
+
+        return self.__edge_num[edge]
 
     def filter(self, **constraints):
         if constraints.pop('traverse', False):
@@ -167,7 +181,39 @@ class CFG:
             if constraints_satisfied:
                 yield bb
 
+    def topological(self):
+        L = deque()
+        unmarked = set(self.basic_blocks.keys())
+        permarked = set()
+        tmpmarked = set()
+
+        def visit(n):
+            if n in permarked:
+                return
+            if n in tmpmarked:
+                raise CircularDependencies()
+
+            tmpmarked.add(n)
+
+            for m in self.basic_blocks[n].successors:
+                visit(m)
+
+            permarked.add(n)
+            L.appendleft(self.basic_blocks[n])
+
+        while unmarked:
+            n = unmarked.pop()
+            visit(n)
+
+        return L
+
     def __iter__(self):
+        """
+        Iterates over basic blocks using BFS.
+
+        CAUTION: This means that unreachable basic blocks will not be returned.
+        """
+
         to_visit = Queue()
         to_visit.put(0)
 
@@ -187,9 +233,6 @@ class CFG:
                     to_visit.put(succ)
 
             yield bb
-
-    def __reversed__(self):
-        return reversed(list(self))
 
     def __getitem__(self, key):
         return self.basic_blocks[key]
