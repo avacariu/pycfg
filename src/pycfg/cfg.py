@@ -141,10 +141,10 @@ class CFG:
 
         return dot
 
-    def edge_number(self, edge):
+    def edge_number(self, edge, longest_first=False):
         """
         Returns the index of `edge` in the list of all the edges which have the
-        same target. The edges are sorted by distance to target.
+        same target.
         """
 
         if edge not in self.__edge_num:
@@ -155,7 +155,7 @@ class CFG:
             if start not in preds:
                 return 0
 
-            self.__edge_num[edge] = sorted(preds, key=lambda p: abs(p-end)).index(start)
+            self.__edge_num[edge] = sorted(preds, key=lambda p: abs(p-end), reverse=longest_first).index(start)
 
         return self.__edge_num[edge]
 
