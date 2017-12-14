@@ -6,13 +6,21 @@ import unittest
 from . import utils
 
 
+def walker(path):
+    for directory, _, filenames in os.walk(path):
+        dirpath = pathlib.Path(directory)
+
+        for filename in filenames:
+            yield dirpath / filename
+
+
 class TestCFG(unittest.TestCase):
     def test_path_is_possible(self):
 
         path = pathlib.Path(os.environ['CFG_TEST_PATH'])
 
         if path.is_dir():
-            filenames = path.iterdir()
+            filenames = walker(path)
         else:
             filenames = [path]
 
