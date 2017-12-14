@@ -159,6 +159,11 @@ class CFG:
 
         return self.__edge_num[edge]
 
+    def is_critical(self, edge):
+        preds = self.filter(predecessors_of=edge[1])
+
+        return len(list(preds)) > 1
+
     def filter(self, **constraints):
         if constraints.pop('traverse', False):
             self_iter = self
